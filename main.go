@@ -5,10 +5,21 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+)
+
+const (
+	DEFAULT_LOOP_MS = 100
+)
+
+var (
+	g_flag_exit bool = false
 )
 
 func enum_files_in_dir(dir_path string, suffix string) ([]string, error) {
@@ -76,21 +87,64 @@ func load_config_in_dir(dir_path string) []*CronItem {
 	return jobs
 }
 
-func core_loop(cron_jobs []*CronItem) {
+func channel_println(log_ch chan string) {
+	var buffer string
 	for {
+		buffer = <-log_ch
+		if buffer == "EXIT" {
+			break
+		}
+		log.Printf(buffer)
+	}
+}
+
+func core_loop(cron_jobs []*CronItem) {
+	var exec_signal sync.WaitGroup = sync.WaitGroup{}
+
+	log_ch := make(chan string)
+	defer close(log_ch)
+	go channel_println(log_ch)
+
+	for {
+		if g_flag_exit == true {
+			break
+		}
 		current_time := time.Now()
 		for _, job_object := range cron_jobs {
-			if job_object.is_need_execute(current_time) == true {
-				job_object.execute(current_time)
+			if job_object.IsNeedExecute(current_time) == true {
+				exec_signal.Add(1)
+				go job_object.GoExecuteTask(&exec_signal, log_ch)
 			}
 		}
-		time.Sleep(time.Millisecond * 250)
+		time.Sleep(time.Millisecond * DEFAULT_LOOP_MS)
 	}
+	exec_signal.Wait()
+	log_ch <- "EXIT"
+	log.Printf("Exit loop")
+}
+
+func signal_exit(ch chan os.Signal) {
+	for sig := range ch {
+		switch sig {
+		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM:
+			log.Println("Set Exit signal")
+			g_flag_exit = true
+			break
+		default:
+			break
+		}
+	}
+}
+
+func register_signal() {
+	ch := make(chan os.Signal)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go signal_exit(ch)
 }
 
 func init() {
 	const (
-		gocroncli_version = "0.0.1"
+		gocroncli_version = "0.0.2"
 	)
 	log.Printf(
 		"gocroncli version : %s",
@@ -111,5 +165,6 @@ func main() {
 	}
 
 	cron_jobs := load_config_in_dir(*ptr_flag_config_dir)
+	register_signal()
 	core_loop(cron_jobs)
 }

@@ -10,21 +10,26 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-type CronExpressionType = int
-
+//type CronExpressionType = int
+// 数字表达式类型
 const (
-	EXACT_NUMBER = iota
-	RANGE_NUMBER
-	MOD_NUMBER
-	ANY_NUMBER
+	// 固定数字表达式
+	FIXED_NUMBER_EXPRESSION = iota
+	// 范围数字表达式
+	RANGE_NUMBER_EXPRESSION
+	// 余数表达式
+	MOD_NUMBER_EXPRESSION
+	// 任意数表达式
+	ANY_NUMBER_EXPRESSION
 )
 
 type CronNumberExpression struct {
 	expression_type int
-	exact           []int
+	fixed           []int
 	min             int
 	max             int
 	div             int
@@ -50,22 +55,22 @@ func (self *CronNumberExpression) MarshalJSON() ([]byte, error) {
 
 func (self *CronNumberExpression) SaveToString() (string, error) {
 	switch {
-	case self.expression_type == ANY_NUMBER:
+	case self.expression_type == ANY_NUMBER_EXPRESSION:
 		{
 			return "*", nil
 		}
-	case self.expression_type == RANGE_NUMBER:
+	case self.expression_type == RANGE_NUMBER_EXPRESSION:
 		{
 			return fmt.Sprintf("%d-%d", self.min, self.max), nil
 		}
-	case self.expression_type == MOD_NUMBER:
+	case self.expression_type == MOD_NUMBER_EXPRESSION:
 		{
 			return fmt.Sprintf("%d/%d", self.min, self.div), nil
 		}
-	case self.expression_type == EXACT_NUMBER:
+	case self.expression_type == FIXED_NUMBER_EXPRESSION:
 		{
 			buffer := make([]byte, 0, 10)
-			for _, value := range self.exact {
+			for _, value := range self.fixed {
 				if len(buffer) != 0 {
 					buffer = append(buffer, ',')
 				}
@@ -84,16 +89,16 @@ func (self *CronNumberExpression) LoadFromString(input string) error {
 	switch {
 	case input == "*":
 		{
-			self.expression_type = ANY_NUMBER
+			self.expression_type = ANY_NUMBER_EXPRESSION
 		}
 	case input == "?":
 		{
-			self.expression_type = ANY_NUMBER
+			self.expression_type = ANY_NUMBER_EXPRESSION
 		}
 	case strings.Contains(input, ","):
 		{
 			// 多个精确的数字
-			self.expression_type = EXACT_NUMBER
+			self.expression_type = FIXED_NUMBER_EXPRESSION
 			string_tuple := strings.Split(input, ",")
 			for _, value := range string_tuple {
 				converted, err := strconv.Atoi(value)
@@ -101,7 +106,7 @@ func (self *CronNumberExpression) LoadFromString(input string) error {
 					log.Printf("Parse expression %s error occurred.", input)
 					return errors.New("Parse expression error.")
 				} else {
-					self.exact = append(self.exact, converted)
+					self.fixed = append(self.fixed, converted)
 				}
 			}
 		}
@@ -109,7 +114,7 @@ func (self *CronNumberExpression) LoadFromString(input string) error {
 		{
 			//区间
 			//例如：1-2 表示 1到2之间
-			self.expression_type = RANGE_NUMBER
+			self.expression_type = RANGE_NUMBER_EXPRESSION
 			string_tuple := strings.Split(input, ",")
 			if len(string_tuple) < 2 {
 				log.Printf("Parse expression %s error occurred.", input)
@@ -130,7 +135,7 @@ func (self *CronNumberExpression) LoadFromString(input string) error {
 		}
 	case strings.Contains(input, "/"):
 		{
-			self.expression_type = MOD_NUMBER
+			self.expression_type = MOD_NUMBER_EXPRESSION
 			string_tuple := strings.Split(input, "/")
 			if len(string_tuple) < 2 {
 				log.Printf("Parse expression %s error occurred.", input)
@@ -157,29 +162,29 @@ func (self *CronNumberExpression) LoadFromString(input string) error {
 				log.Printf("Parse expression %s error occurred.", input)
 				return errors.New("Parse expression error.")
 			}
-			self.exact = append(self.exact, converted)
+			self.fixed = append(self.fixed, converted)
 		}
 	}
 	return nil
 }
 
-func (self *CronNumberExpression) is_match(input int) bool {
+func (self *CronNumberExpression) IsMatchNumber(input int) bool {
 	switch {
-	case self.expression_type == ANY_NUMBER:
+	case self.expression_type == ANY_NUMBER_EXPRESSION:
 		{
 			return true
 		}
-	case self.expression_type == RANGE_NUMBER:
+	case self.expression_type == RANGE_NUMBER_EXPRESSION:
 		{
 			return input >= self.min && input <= self.max
 		}
-	case self.expression_type == MOD_NUMBER:
+	case self.expression_type == MOD_NUMBER_EXPRESSION:
 		{
 			return input >= self.min && (input%self.div == 0)
 		}
-	case self.expression_type == EXACT_NUMBER:
+	case self.expression_type == FIXED_NUMBER_EXPRESSION:
 		{
-			for _, value := range self.exact {
+			for _, value := range self.fixed {
 				if input == value {
 					return true
 				}
@@ -208,12 +213,12 @@ type CronItem struct {
 	Exec        string
 	Argv        []string
 	LastRunTime int64
-	ProcessID   int
+	//ProcessID   int
 }
 
 func NewCronItem() *CronItem {
 	ptr := new(CronItem)
-	ptr.ProcessID = 0
+	//ptr.ProcessID = 0
 	ptr.LastRunTime = 0
 	return ptr
 }
@@ -223,10 +228,11 @@ func (self *CronItem) LoadCronItemFromJson(json_data []byte) error {
 	if err != nil {
 		return err
 	}
+	self.StartType = strings.ToUpper(self.StartType)
 	return nil
 }
 
-func (self *CronItem) is_need_execute(current_time time.Time) bool {
+func (self *CronItem) IsNeedExecute(current_time time.Time) bool {
 	switch {
 	case self.StartType == "ONCE":
 		{
@@ -235,31 +241,31 @@ func (self *CronItem) is_need_execute(current_time time.Time) bool {
 			}
 			return false
 		}
-	case self.Second.is_match(current_time.Second()) == false:
+	case self.Second.IsMatchNumber(current_time.Second()) == false:
 		{
 			return false
 		}
-	case self.Minute.is_match(current_time.Minute()) == false:
+	case self.Minute.IsMatchNumber(current_time.Minute()) == false:
 		{
 			return false
 		}
-	case self.Hour.is_match(current_time.Hour()) == false:
+	case self.Hour.IsMatchNumber(current_time.Hour()) == false:
 		{
 			return false
 		}
-	case self.Day.is_match(current_time.Day()) == false:
+	case self.Day.IsMatchNumber(current_time.Day()) == false:
 		{
 			return false
 		}
-	case self.Weekday.is_match(int(current_time.Weekday())) == false:
+	case self.Weekday.IsMatchNumber(int(current_time.Weekday())) == false:
 		{
 			return false
 		}
-	case self.Month.is_match(int(current_time.Month())) == false:
+	case self.Month.IsMatchNumber(int(current_time.Month())) == false:
 		{
 			return false
 		}
-	case self.Year.is_match(current_time.Year()) == false:
+	case self.Year.IsMatchNumber(current_time.Year()) == false:
 		{
 			return false
 		}
@@ -275,21 +281,39 @@ func (self *CronItem) is_need_execute(current_time time.Time) bool {
 	}
 }
 
-func (self *CronItem) execute(current_time time.Time) error {
-	if self.is_need_execute(current_time) == true {
-		self.LastRunTime = current_time.Unix()
-		cmd := exec.Command(self.Exec, self.Argv...)
-		cmd.Dir = self.Workdir
-		cmd.Env = os.Environ()
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("Start Task [%s] Failed.", self.Name)
-			log.Printf(err.Error())
-		} else {
-			log.Printf("Start Task [%s] PID %d\n", self.Name, cmd.Process.Pid)
-			self.ProcessID = cmd.Process.Pid
-			//cmd.Process.Release()
+func (self *CronItem) ExecuteTask(log_ch chan string) error {
+	self.LastRunTime = time.Now().Unix()
+	cmd := exec.Command(self.Exec, self.Argv...)
+	cmd.Dir = self.Workdir
+	cmd.Env = os.Environ()
+	err := cmd.Start()
+	if err != nil {
+		log.Printf("[%s] Execute Failed. Error: %s\n", self.Name, err.Error())
+	} else {
+		log.Printf("[%s] Execute success. PID %d\n", self.Name, cmd.Process.Pid)
+		cmd.Wait()
+		if cmd.ProcessState != nil {
+			log.Printf("[%s] Exit. ExitCode %d\n", self.Name, cmd.ProcessState.ExitCode())
 		}
 	}
-	return nil
+	return err
+}
+
+func (self *CronItem) GoExecuteTask(sync_signal *sync.WaitGroup, log_ch chan string) error {
+	self.LastRunTime = time.Now().Unix()
+	cmd := exec.Command(self.Exec, self.Argv...)
+	cmd.Dir = self.Workdir
+	cmd.Env = os.Environ()
+	err := cmd.Start()
+	if err != nil {
+		log_ch <- fmt.Sprintf("[%s] Execute Failed. Error: %s\n", self.Name, err.Error())
+	} else {
+		log_ch <- fmt.Sprintf("[%s] Execute success. PID %d\n", self.Name, cmd.Process.Pid)
+		cmd.Wait()
+		if cmd.ProcessState != nil {
+			log_ch <- fmt.Sprintf("[%s] Exit. ExitCode %d\n", self.Name, cmd.ProcessState.ExitCode())
+		}
+	}
+	sync_signal.Done()
+	return err
 }
