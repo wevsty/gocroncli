@@ -213,12 +213,10 @@ type CronItem struct {
 	Exec        string
 	Argv        []string
 	LastRunTime int64
-	//ProcessID   int
 }
 
 func NewCronItem() *CronItem {
 	ptr := new(CronItem)
-	//ptr.ProcessID = 0
 	ptr.LastRunTime = 0
 	return ptr
 }
@@ -229,6 +227,7 @@ func (self *CronItem) LoadCronItemFromJson(json_data []byte) error {
 		return err
 	}
 	self.StartType = strings.ToUpper(self.StartType)
+	// self.LastRunTime = 0
 	return nil
 }
 
@@ -288,12 +287,12 @@ func (self *CronItem) ExecuteTask(log_ch chan string) error {
 	cmd.Env = os.Environ()
 	err := cmd.Start()
 	if err != nil {
-		log.Printf("[%s] Execute Failed. Error: %s\n", self.Name, err.Error())
+		log.Printf("[%s] Execute Failed. Error: %s", self.Name, err.Error())
 	} else {
-		log.Printf("[%s] Execute success. PID %d\n", self.Name, cmd.Process.Pid)
+		log.Printf("[%s] Execute success. PID %d", self.Name, cmd.Process.Pid)
 		cmd.Wait()
 		if cmd.ProcessState != nil {
-			log.Printf("[%s] Exit. ExitCode %d\n", self.Name, cmd.ProcessState.ExitCode())
+			log.Printf("[%s] Exit. ExitCode %d", self.Name, cmd.ProcessState.ExitCode())
 		}
 	}
 	return err
@@ -306,12 +305,12 @@ func (self *CronItem) GoExecuteTask(sync_signal *sync.WaitGroup, log_ch chan str
 	cmd.Env = os.Environ()
 	err := cmd.Start()
 	if err != nil {
-		log_ch <- fmt.Sprintf("[%s] Execute Failed. Error: %s\n", self.Name, err.Error())
+		log_ch <- fmt.Sprintf("[%s] Execute Failed. Error: %s", self.Name, err.Error())
 	} else {
-		log_ch <- fmt.Sprintf("[%s] Execute success. PID %d\n", self.Name, cmd.Process.Pid)
+		log_ch <- fmt.Sprintf("[%s] Execute success. PID %d", self.Name, cmd.Process.Pid)
 		cmd.Wait()
 		if cmd.ProcessState != nil {
-			log_ch <- fmt.Sprintf("[%s] Exit. ExitCode %d\n", self.Name, cmd.ProcessState.ExitCode())
+			log_ch <- fmt.Sprintf("[%s] Exit. ExitCode %d", self.Name, cmd.ProcessState.ExitCode())
 		}
 	}
 	sync_signal.Done()

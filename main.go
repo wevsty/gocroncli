@@ -91,7 +91,7 @@ func channel_println(log_ch chan string) {
 	var buffer string
 	for {
 		buffer = <-log_ch
-		if buffer == "EXIT" {
+		if buffer == "CMD:EXIT" {
 			break
 		}
 		log.Printf(buffer)
@@ -119,7 +119,7 @@ func core_loop(cron_jobs []*CronItem) {
 		time.Sleep(time.Millisecond * DEFAULT_LOOP_MS)
 	}
 	exec_signal.Wait()
-	log_ch <- "EXIT"
+	log_ch <- "CMD:EXIT"
 	log.Printf("Exit loop")
 }
 
@@ -149,8 +149,9 @@ func init() {
 	log.Printf(
 		"gocroncli version : %s",
 		gocroncli_version)
+	log.Printf("Build date : 20200905-00")
 	log.Printf(
-		"Bin build on : %s",
+		"Go runtime version : %s",
 		runtime.Version())
 }
 
