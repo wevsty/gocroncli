@@ -221,6 +221,10 @@ func NewCronItem() *CronItem {
 	return ptr
 }
 
+func (self *CronItem) FlushLastRunTime() {
+	self.LastRunTime = time.Now().Unix()
+}
+
 func (self *CronItem) LoadCronItemFromJson(json_data []byte) error {
 	err := json.Unmarshal(json_data, self)
 	if err != nil {
@@ -281,11 +285,16 @@ func (self *CronItem) IsNeedExecute(current_time time.Time) bool {
 }
 
 func (self *CronItem) ExecuteTask(log_ch chan string) error {
-	self.LastRunTime = time.Now().Unix()
-	cmd := exec.Command(self.Exec, self.Argv...)
+	self.FlushLastRunTime()
+	exec_path, err := exec.LookPath(self.Exec)
+	if err != nil {
+		log.Printf("[%s] Can't find the path %s", self.Name, self.Exec)
+		return err
+	}
+	cmd := exec.Command(exec_path, self.Argv...)
 	cmd.Dir = self.Workdir
 	cmd.Env = os.Environ()
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		log.Printf("[%s] Execute Failed. Error: %s", self.Name, err.Error())
 	} else {
@@ -299,11 +308,17 @@ func (self *CronItem) ExecuteTask(log_ch chan string) error {
 }
 
 func (self *CronItem) GoExecuteTask(sync_signal *sync.WaitGroup, log_ch chan string) error {
-	self.LastRunTime = time.Now().Unix()
-	cmd := exec.Command(self.Exec, self.Argv...)
+	defer sync_signal.Done()
+	self.FlushLastRunTime()
+	exec_path, err := exec.LookPath(self.Exec)
+	if err != nil {
+		log_ch <- fmt.Sprintf("[%s] Can't find the path %s", self.Name, self.Exec)
+		return err
+	}
+	cmd := exec.Command(exec_path, self.Argv...)
 	cmd.Dir = self.Workdir
 	cmd.Env = os.Environ()
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		log_ch <- fmt.Sprintf("[%s] Execute Failed. Error: %s", self.Name, err.Error())
 	} else {
@@ -313,6 +328,5 @@ func (self *CronItem) GoExecuteTask(sync_signal *sync.WaitGroup, log_ch chan str
 			log_ch <- fmt.Sprintf("[%s] Exit. ExitCode %d", self.Name, cmd.ProcessState.ExitCode())
 		}
 	}
-	sync_signal.Done()
 	return err
 }

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DEFAULT_LOOP_MS = 100
+	DEFAULT_LOOP_MS = 200
 )
 
 var (
@@ -144,12 +144,12 @@ func register_signal() {
 
 func init() {
 	const (
-		gocroncli_version = "0.0.2"
+		gocroncli_version = "0.0.3"
 	)
 	log.Printf(
 		"gocroncli version : %s",
 		gocroncli_version)
-	log.Printf("Build date : 20200905-00")
+	log.Printf("Build date : 20200906-00")
 	log.Printf(
 		"Go runtime version : %s",
 		runtime.Version())
